@@ -38,17 +38,17 @@ def parameter_based_error(gate_name, gate_parameter):
     rotations can be prepared with less error than others on some imaginary real hardware and therefore a merging from two rotations
     :math:`\\theta_1` and :math:`\\theta_2` to the single rotation :math:`\\Theta = \\theta_1 + \\theta_2` may not be optimal.
     
-    Choses to scale rotations about the :math:`(X,Y,Z)` axis by :math:`(\\sin{(\\theta)}, \\tan{(\\theta)}}, \\cos{\\theta})` respectively.
+    Choses to scale rotations about the :math:`(X,Y,Z)` axis by :math:`(\\abs{\\sin{(\\theta)}}, \\abs{\\tan{(\\theta)}}}, \\abs{\\cos{\\theta})}` respectively.
 
     """
-    gate_error = error_rates.get(gate_name, 0.001)
+    error = error_rates.get(gate_name, 0.001)
 
     if gate_name[-2:] == "rx":
-        error = gate_error*np.sin(gate_parameter)
+        error = error*np.abs(np.sin(gate_parameter))
     elif gate_name[-2:] == "ry":
-        error = gate_error*np.tan(gate_parameter)
+        error = error*np.abs(np.tan(gate_parameter))
     elif gate_name[-2:] == "rz":
-        error = gate_error*np.cos(gate_parameter)
+        error = error*np.abs(np.cos(gate_parameter))
 
 
 
