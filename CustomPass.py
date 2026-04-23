@@ -2,6 +2,7 @@ from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.dagcircuit import DAGCircuit
 from qiskit.circuit.library import RXGate, RZGate, RYGate, CRXGate, CRYGate, CRZGate
 import numpy as np
+from NoiseModel import parameter_based_error
 
 
 
@@ -79,13 +80,20 @@ class CustomOptimizationPass(TransformationPass):
                 if node.qargs != operation.qargs:
                     continue
 
+
                 #If two consecutive operations are RZ gates, merge them:
                 if isinstance(node.op, RZGate) and isinstance(operation.op, RZGate):
                     theta = node.op.params[0] + operation.op.params[0]
                     new_gate = RZGate(theta)
 
-                    dag.substitute_node(node, new_gate)
-                    dag.remove_op_node(operation)
+                    old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
+                    new_error = parameter_based_error(node.op.name, theta)
+
+                    if new_error < old_error:
+                        dag.substitute_node(node, new_gate)
+                        dag.remove_op_node(operation)
+                    else:
+                        print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
 
                     break
 
@@ -94,8 +102,15 @@ class CustomOptimizationPass(TransformationPass):
                     theta = node.op.params[0] + operation.op.params[0]
                     new_gate = RXGate(theta)
 
-                    dag.substitute_node(node, new_gate)
-                    dag.remove_op_node(operation)
+                    old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
+                    new_error = parameter_based_error(node.op.name, theta)
+
+                    if new_error < old_error:
+                        dag.substitute_node(node, new_gate)
+                        dag.remove_op_node(operation)
+                    else:
+                        print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
+
 
                     break
 
@@ -104,8 +119,15 @@ class CustomOptimizationPass(TransformationPass):
                     theta = node.op.params[0] + operation.op.params[0]
                     new_gate = RYGate(theta)
 
-                    dag.substitute_node(node, new_gate)
-                    dag.remove_op_node(operation)
+                    old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
+                    new_error = parameter_based_error(node.op.name, theta)
+
+                    if new_error < old_error:
+                        dag.substitute_node(node, new_gate)
+                        dag.remove_op_node(operation)
+                    else:
+                        print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
+
 
                     break
 
@@ -114,8 +136,15 @@ class CustomOptimizationPass(TransformationPass):
                     theta = node.op.params[0] + operation.op.params[0]
                     new_gate = CRXGate(theta)
 
-                    dag.substitute_node(node, new_gate)
-                    dag.remove_op_node(operation)
+                    old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
+                    new_error = parameter_based_error(node.op.name, theta)
+
+                    if new_error < old_error:
+                        dag.substitute_node(node, new_gate)
+                        dag.remove_op_node(operation)
+                    else:
+                        print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
+
 
                     break
 
@@ -124,8 +153,14 @@ class CustomOptimizationPass(TransformationPass):
                     theta = node.op.params[0] + operation.op.params[0]
                     new_gate = CRYGate(theta)
 
-                    dag.substitute_node(node, new_gate)
-                    dag.remove_op_node(operation)
+                    old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
+                    new_error = parameter_based_error(node.op.name, theta)
+
+                    if new_error < old_error:
+                        dag.substitute_node(node, new_gate)
+                        dag.remove_op_node(operation)
+                    else:
+                        print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
 
                     break
 
@@ -134,8 +169,14 @@ class CustomOptimizationPass(TransformationPass):
                     theta = node.op.params[0] + operation.op.params[0]
                     new_gate = CRZGate(theta)
 
-                    dag.substitute_node(node, new_gate)
-                    dag.remove_op_node(operation)
+                    old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
+                    new_error = parameter_based_error(node.op.name, theta)
+
+                    if new_error < old_error:
+                        dag.substitute_node(node, new_gate)
+                        dag.remove_op_node(operation)
+                    else:
+                        print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
 
                     break
 

@@ -32,13 +32,24 @@ def squared_noise_model(single_qubit_errors):
 
 error_rates = squared_noise_model(single_qubit_error_rates)
 
-def parameter_based_error():
+def parameter_based_error(gate_name, gate_parameter):
     """
     The idea is to model the error for rotation gates as dependant on their rotation parameter. This is to simulate a case where certain
     rotations can be prepared with less error than others on some imaginary real hardware and therefore a merging from two rotations
     :math:`\\theta_1` and :math:`\\theta_2` to the single rotation :math:`\\Theta = \\theta_1 + \\theta_2` may not be optimal.
+    
+    Choses to scale rotations about the :math:`(X,Y,Z)` axis by :math:`(\\sin{(\\theta)}, \\tan{(\\theta)}}, \\cos{\\theta})` respectively.
+
     """
-    error = 0
+    gate_error = error_rates.get(gate_name, 0.001)
+
+    if gate_name[-2:] == "rx":
+        error = gate_error*np.sin(gate_parameter)
+    elif gate_name[-2:] == "ry":
+        error = gate_error*np.tan(gate_parameter)
+    elif gate_name[-2:] == "rz":
+        error = gate_error*np.cos(gate_parameter)
+
 
 
     return error
@@ -49,6 +60,8 @@ def error_cost_function(circuit):
     for gate,_,__ in circuit.data:
         #If gate does not have a defined error rate, default to a value of 0.001
         gate_error = error_rates.get(gate.name, 0.001)
+        if gate.params != []: #if the gate is dependant on a parameter (rotation gate in this example)
+            gate_error = parameter_based_error(gate.name, gate.params[0])
         error += gate_error
 
     return error
