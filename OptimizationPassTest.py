@@ -2,6 +2,7 @@ from qiskit import QuantumCircuit, transpile, ClassicalRegister
 from qiskit.transpiler import PassManager
 from CustomPass import CustomOptimizationPass
 from NoiseModel import error_cost_function
+from NativeGateMapping import NativeGateMap
 from qiskit.circuit.random import random_circuit
 import random
 import numpy as np
@@ -9,6 +10,8 @@ import matplotlib.pyplot as plt
 
 #Custom Pass Manager
 pm = PassManager([CustomOptimizationPass()])
+#Custom Native Gate Mapping
+ngMap = NativeGateMap()
 
 def example_qc():
     """Example QuantumCircuit that demonstrates all optmisation functionalities of the CustomOptimizationPass"""
@@ -132,7 +135,7 @@ def apply_XYZ(circ: QuantumCircuit, gate_name:str, qubits:list, theta = None):
     
     return circ
 
-def plot_errors(num_runs:int, num_qubits:int, depth:int):
+def plot_errors(num_runs:int, num_qubits:int, depth:int, filename = "Random Circuit Optimized Error Ratios"):
     runs = [i for i in range(num_runs)]
     error_ratios = []
     for i in range(num_runs):
@@ -143,7 +146,7 @@ def plot_errors(num_runs:int, num_qubits:int, depth:int):
     plt.plot(runs,error_ratios, color = 'r')
     plt.xlabel("Random Circuit Number")
     plt.ylabel("Ratio of Approximate Error: e_{opt}/e_{org}")
-    plt.savefig("Random Circuit Optimized Error Ratios")
+    plt.savefig(filename)
 
     return None
 
@@ -162,4 +165,35 @@ def true_random_circuit():
 
     return None
 
-plot_errors(100,2,10)
+def random_native_gate_optimisation(num_qubits:int,depth:int,circuits = False):
+
+    qc = custom_random_circuit(num_qubits,depth)
+    if circuits:
+        print(qc)
+    mapped_qc = ngMap.map(qc)
+    if circuits:
+        print(mapped_qc)
+    optimized_qc = pm.run(mapped_qc)
+    if circuits:
+        print(optimized_qc)
+    
+    print("Depths: \n Original Random Circuit: ",qc.depth(),"\n Native Gate Set Mapped Circuit: ",mapped_qc.depth(),"\n Optimized Circuit: ",optimized_qc.depth())
+
+def plot_depths_ngMap(num_runs:int, num_qubits:int, depth:int, filename = "Random Circuit Optimized Error Ratios"):
+    runs = [i for i in range(num_runs)]
+    depth_ratios = []
+    for i in range(num_runs):
+        qc = custom_random_circuit(num_qubits,depth)
+        mapped_qc = ngMap.map(qc)
+        optimized_qc = pm.run(mapped_qc)
+        depth_ratios.append(optimized_qc.depth()/mapped_qc.depth())
+    plt.clf()
+    plt.plot(runs,depth_ratios, color = 'r')
+    plt.xlabel("Random Circuit Number")
+    plt.ylabel("Ratio of Depth: d_{opt}/d_{map}")
+    plt.savefig(filename)
+
+    return None
+
+#plot_depths_ngMap(100,2,10,"Q2D10R100NG")
+#plot_errors(100,2,10,"Q2D10R100")
