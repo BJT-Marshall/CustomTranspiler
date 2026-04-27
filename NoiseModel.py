@@ -65,3 +65,15 @@ def error_cost_function(circuit):
         error += gate_error
 
     return error
+
+def fidelity_cost_function(circuit):
+
+    fidelity = 1
+    for gate,_,__ in circuit.data:
+        #If gate does not have a defined error rate, default to a value of 0.001
+        gate_error = error_rates.get(gate.name, 0.001)
+        if gate.params != []: #if the gate is dependant on a parameter (rotation gate in this example)
+            gate_error = parameter_based_error(gate.name, gate.params[0])
+        fidelity *= (1-gate_error)
+
+    return fidelity
