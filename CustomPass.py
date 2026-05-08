@@ -1,8 +1,10 @@
 from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.dagcircuit import DAGCircuit
-from qiskit.circuit.library import RXGate, RZGate, RYGate, CRXGate, CRYGate, CRZGate
+from qiskit.converters import dag_to_circuit
+from qiskit.circuit.library import XGate, YGate, ZGate, CXGate, CYGate, CZGate, RXGate, RZGate, RYGate, CRXGate, CRYGate, CRZGate
 import numpy as np
 from NoiseModel import parameter_based_error
+
 
 
 
@@ -11,7 +13,7 @@ class CustomOptimizationPass(TransformationPass):
     A custom optmisization pass checking for the consecutive application of identical gates and consecutive rotation gates to be optimised.
     """
 
-    def run(self, dag: DAGCircuit) -> DAGCircuit:
+    def run(self, dag: DAGCircuit, native = True) -> DAGCircuit:
         """
         Runs the custom optimisation on the :python:`DAGCircuit` object.
 
@@ -28,6 +30,8 @@ class CustomOptimizationPass(TransformationPass):
             new_dag.apply_operation_back(node.op, node.qargs, node.cargs)
 
         #Applying the optimization to the copied DAGCircuit object
+        
+        self.swap_commuting_gates(new_dag)
         self.cancel_consec_gates(new_dag)
         self.merge_rotation_gates(new_dag)
 
@@ -42,15 +46,14 @@ class CustomOptimizationPass(TransformationPass):
         :param dag: A :python:`DAGCircuit` object to be optimised.
         :type dag: DAGCircuit
         """
-
         for node in list(dag.topological_op_nodes()):
             succesive_operation = dag.quantum_successors(node)
 
-            for operation in succesive_operation:
-                #If the operation is not a gate, ignore it. (i.e. barriers, measurments etc)
+            for operation in succesive_operation:       
+                #If node is not an operation, ignore
                 if not hasattr(operation, "op"):
                     continue
-                
+        
                 #if the operation is the same and it is one the same qubits
                 if type(node.op) == type(operation.op) and node.qargs == operation.qargs and node.op.params == operation.op.params:
                     #If the operation is Hermetian and therefore U^2 = U^dag U = I (as must be unitary)
@@ -58,7 +61,6 @@ class CustomOptimizationPass(TransformationPass):
                         dag.remove_op_node(node)
                         dag.remove_op_node(operation)
                         break
-
         return None
     
     def merge_rotation_gates(self, dag: DAGCircuit):
@@ -70,139 +72,186 @@ class CustomOptimizationPass(TransformationPass):
         :type dag: DAGCircuit
         """
 
+        rotation_gate_constructors = [RZGate, RXGate, RYGate, CRZGate, CRXGate, CRYGate]
+
         for node in list(dag.topological_op_nodes()):
             succesive_operation = dag.quantum_successors(node)
 
             for operation in succesive_operation:
-                #If the operation is not a gate, ignore it. (i.e. barriers, measurments etc)
+                #If node is not an operation, ignore
                 if not hasattr(operation, "op"):
                     continue
                 if node.qargs != operation.qargs:
                     continue
 
-
+                for constructor in rotation_gate_constructors:
                 #If two consecutive operations are RZ gates, merge them:
-                if isinstance(node.op, RZGate) and isinstance(operation.op, RZGate):
-                    theta = node.op.params[0] + operation.op.params[0]
-                    if theta == 0:
-                        dag.remove_op_node(node)
-                        dag.remove_op_node(operation)
-                    else:
-                        new_gate = RZGate(theta)
-
-                        old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
-                        new_error = parameter_based_error(node.op.name, theta)
-
-
-                        if new_error < old_error:
-                            dag.substitute_node(node, new_gate)
+                    if isinstance(node.op, constructor) and isinstance(operation.op, constructor):
+                        theta = node.op.params[0] + operation.op.params[0]
+                        if theta == 0:
+                            dag.remove_op_node(node)
                             dag.remove_op_node(operation)
                         else:
-                            print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
+                            new_gate = constructor(theta)
 
-                    break
+                            old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
+                            new_error = parameter_based_error(node.op.name, theta)
 
-                #If two consecutive operations are RX gates, merge them:
-                if isinstance(node.op, RXGate) and isinstance(operation.op, RXGate):
-                    theta = node.op.params[0] + operation.op.params[0]
-                    if theta == 0:
-                        dag.remove_op_node(node)
-                        dag.remove_op_node(operation)
-                    else:
-                        new_gate = RXGate(theta)
 
-                        old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
-                        new_error = parameter_based_error(node.op.name, theta)
+                            if new_error < old_error:
+                                dag.substitute_node(node, new_gate)
+                                dag.remove_op_node(operation)
 
-                        if new_error < old_error:
-                            dag.substitute_node(node, new_gate)
-                            dag.remove_op_node(operation)
+                        break
+        return None
+    
+    def swap_commuting_gates(self, dag:DAGCircuit):
+
+        single_qubit_commuting_pairs = {
+            #Convention: If TwoQubitGate commutes with "single_qubit_name" only on certain qubit(s) with qargs then its entry is [TwoQubitGate, [qargs]]
+            "x": [RXGate, [CXGate,[1]], [CRXGate,[1]]],
+            "y": [RYGate, [CYGate,[1]], [CRYGate,[1]]],
+            "z": [RZGate, CZGate, CRZGate, [CXGate,[0]], [CRXGate,[0]], [CYGate,[0]], [CRYGate,[0]]],
+            "rx": [XGate, [CXGate,[1]], [CRXGate,[1]]],
+            "ry": [YGate, [CYGate,[1]], [CRYGate,[1]]],
+            "rz": [ZGate, CZGate, CRZGate, [CXGate,[0]], [CRXGate,[0]], [CYGate,[0]], [CRYGate,[0]]],
+            "sx": [XGate, RXGate,[CXGate,[1]],[CZGate,[0]],[CRZGate,[0]],[CRXGate,[0,1]]] 
+            
+        } 
+
+        two_to_one_qubit_commuting_pairs = {
+            #Convention: if "two_qubit_name" commutes with SingleQubitGate only on certain qubit(s) with qargs then its entry is [TwoQubitGate, [qargs]]
+            "cx": [[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]],
+            "cy": [[YGate,[1]],[RYGate,[1]],[ZGate,[0]],[RZGate,[0]]],
+            "cz": [ZGate,RZGate],
+            "crx": [[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]],
+            "cry": [[YGate,[1]],[RYGate,[1]],[ZGate,[0]],[RZGate,[0]]],
+            "crz": [ZGate,RZGate]
+        } 
+
+        two_to_two_qubit_commuting_pairs = {
+            #key just needs to identify "same" qargs commute or "opposite" qargs commute
+
+            #Convention: True means same qargs, False means different qargs
+            "cx": [[CRXGate, True], [CZGate, True], [CRZGate, True]],
+            "cy": [[CRYGate, True], [CZGate, True], [CRZGate, True]],
+            "cz": [[CRZGate, True], [CRZGate, True]]
+
+        } #TODO finish this list of commutators
+
+        for qubit in dag.qubits:
+            operations = list(dag.nodes_on_wire(qubit, only_ops=True))
+            for i in range(1,len(operations)-1):
+                prev_node = operations[i-1]
+                node = operations[i]
+                next_node = operations[i+1]
+                if type(prev_node.op) == type(next_node.op) and len(node.qargs) == 1: #if they would cancel or merge.
+                    for gate in single_qubit_commuting_pairs[node.op.name]:
+                        if isinstance(gate,list): #if the gate is a two qubit gate that requires more careful treatment
+                            if isinstance(next_node.op, gate[0]): #if they also can be brought together through commutation
+                                for arg in gate[1]:
+                                    if node.qargs[0] == next_node.qargs[arg]: #if the qargs are correct to allow commutation
+                                        dag.swap_nodes(node,next_node)
+                            break
+                                        
                         else:
-                            print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
+                            if isinstance(next_node.op, gate): #if the single qubit gates commute and can be swapped
+                                dag.swap_nodes(node,next_node)
+                            break
 
-
-                    break
-
-                #If two consecutive operations are RY gates, merge them:
-                if isinstance(node.op, RYGate) and isinstance(operation.op, RYGate):
-                    theta = node.op.params[0] + operation.op.params[0]
-                    if theta == 0:
-                        dag.remove_op_node(node)
-                        dag.remove_op_node(operation)
-                    else:
-                        new_gate = RYGate(theta)
-
-                        old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
-                        new_error = parameter_based_error(node.op.name, theta)
-
-                        if new_error < old_error:
-                            dag.substitute_node(node, new_gate)
-                            dag.remove_op_node(operation)
+                
+                elif type(prev_node.op) == type(next_node.op):
+                    for gate in two_to_one_qubit_commuting_pairs[node.op.name]: #[[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]]
+                        if isinstance(gate,list): #if the gate is a two qubit gate that requires more careful treatment
+                            if isinstance(next_node.op, gate[0]): #if they also can be brought together through commutation
+                                for arg in gate[1]:
+                                    if node.qargs[arg] == next_node.qargs[0]: #if the qargs are correct to allow commutation
+                                        dag.swap_nodes(node,next_node)
+                            break
                         else:
-                            print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
+                            if isinstance(next_node.op, gate): #if the single qubit gates commute and can be swapped
+                                dag.swap_nodes(node,next_node)
+                            break
+                        
+                        
+                    #for gate in two_to_two_qubit_commuting_pairs:
+        
+        return None
+        
+    def swap_commuting_gates_old(self, dag:DAGCircuit):
 
+        single_qubit_commuting_pairs = {
+            #Convention: If TwoQubitGate commutes with "single_qubit_name" only on certain qubit(s) with qargs then its entry is [TwoQubitGate, [qargs]]
+            "x": [RXGate, [CXGate,[1]], [CRXGate,[1]]],
+            "y": [RYGate, [CYGate,[1]], [CRYGate,[1]]],
+            "z": [RZGate, CZGate, CRZGate, [CXGate,[0]], [CRXGate,[0]], [CYGate,[0]], [CRYGate,[0]]],
+            "rx": [XGate, [CXGate,[1]], [CRXGate,[1]]],
+            "ry": [YGate, [CYGate,[1]], [CRYGate,[1]]],
+            "rz": [ZGate, CZGate, CRZGate, [CXGate,[0]], [CRXGate,[0]], [CYGate,[0]], [CRYGate,[0]]],
+            "sx": [XGate, RXGate,[CXGate,[1]],[CZGate,[0]],[CRZGate,[0]],[CRXGate,[0,1]]] 
+            
+        } 
 
-                    break
+        two_to_one_qubit_commuting_pairs = {
+            #Convention: if "two_qubit_name" commutes with SingleQubitGate only on certain qubit(s) with qargs then its entry is [TwoQubitGate, [qargs]]
+            "cx": [[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]],
+            "cy": [[YGate,[1]],[RYGate,[1]],[ZGate,[0]],[RZGate,[0]]],
+            "cz": [ZGate,RZGate],
+            "crx": [[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]],
+            "cry": [[YGate,[1]],[RYGate,[1]],[ZGate,[0]],[RZGate,[0]]],
+            "crz": [ZGate,RZGate]
+        } 
 
-                #If two consecutive operations are CRX gates, merge them:
-                if isinstance(node.op, CRXGate) and isinstance(operation.op, CRXGate):
-                    theta = node.op.params[0] + operation.op.params[0]
-                    if theta == 0:
-                        dag.remove_op_node(node)
-                        dag.remove_op_node(operation)
-                    else:
-                        new_gate = CRXGate(theta)
+        two_to_two_qubit_commuting_pairs = {
+            #key just needs to identify "same" qargs commute or "opposite" qargs commute
 
-                        old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
-                        new_error = parameter_based_error(node.op.name, theta)
+            #Convention: True means same qargs, False means different qargs
+            "cx": [[CRXGate, True], [CZGate, True], [CRZGate, True]],
+            "cy": [[CRYGate, True], [CZGate, True], [CRZGate, True]],
+            "cz": [[CRZGate, True], [CRZGate, True]]
 
-                        if new_error < old_error:
-                            dag.substitute_node(node, new_gate)
-                            dag.remove_op_node(operation)
+        } #TODO finish this list of commutators
+
+        node_list = list(dag.topological_op_nodes())
+        for i in range(len(node_list)-1):
+            node = node_list[i]
+            next_node = node_list[i+1]
+
+            succesive_op = dag.quantum_successors(next_node)
+
+            for operation in succesive_op:
+                #If node is not an operation, ignore
+                if not hasattr(operation, "op"):
+                    continue
+                if node.qargs != operation.qargs:
+                    continue
+            
+                if type(node.op) == type(operation.op) and len(node.qargs) == 1: #if they would cancel or merge.
+                    for gate in single_qubit_commuting_pairs[node.op.name]:
+                        if isinstance(gate,list): #if the gate is a two qubit gate that requires more careful treatment
+                            if isinstance(next_node.op, gate[0]): #if they also can be brought together through commutation
+                                for arg in gate[1]:
+                                    if node.qargs[0] == next_node.qargs[arg]: #if the qargs are correct to allow commutation
+                                        dag.swap_nodes(node,next_node)
+                                        
                         else:
-                            print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
+                            if isinstance(next_node.op, gate): #if the single qubit gates commute and can be swapped
+                                dag.swap_nodes(node,next_node)
 
-
-                    break
-
-                #If two consecutive operations are CRY gates, merge them:
-                if isinstance(node.op, CRYGate) and isinstance(operation.op, CRYGate):
-                    theta = node.op.params[0] + operation.op.params[0]
-                    if theta == 0:
-                        dag.remove_op_node(node)
-                        dag.remove_op_node(operation)
-                    else:
-                        new_gate = CRYGate(theta)
-
-                        old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
-                        new_error = parameter_based_error(node.op.name, theta)
-
-                        if new_error < old_error:
-                            dag.substitute_node(node, new_gate)
-                            dag.remove_op_node(operation)
+                
+                elif type(node.op) == type(operation.op):
+                    for gate in two_to_one_qubit_commuting_pairs[node.op.name]: #[[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]]
+                        if isinstance(gate,list): #if the gate is a two qubit gate that requires more careful treatment
+                            if isinstance(next_node.op, gate[0]): #if they also can be brought together through commutation
+                                for arg in gate[1]:
+                                    if node.qargs[arg] == next_node.qargs[0]: #if the qargs are correct to allow commutation
+                                        dag.swap_nodes(node,next_node)
                         else:
-                            print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
-
-                    break
-
-                #If two consecutive operations are CRZ gates, merge them:
-                if isinstance(node.op, CRZGate) and isinstance(operation.op, CRZGate):
-                    theta = node.op.params[0] + operation.op.params[0]
-                    if theta == 0:
-                        dag.remove_op_node(node)
-                        dag.remove_op_node(operation)
-                    else:
-                        new_gate = CRZGate(theta)
-
-                        old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
-                        new_error = parameter_based_error(node.op.name, theta)
-
-                        if new_error < old_error:
-                            dag.substitute_node(node, new_gate)
-                            dag.remove_op_node(operation)
-                        else:
-                            print("Error dependancy on rotation parmeter deems this alteration sub-optimal:\n",node.op.name,"(",node.op.params[0],"), ",operation.op.name,"(",operation.op.params[0],") -> ",node.op.name,"(",theta,")")
-
-                    break
+                            if isinstance(next_node.op, gate): #if the single qubit gates commute and can be swapped
+                                dag.swap_nodes(node,next_node)
+                        
+                        
+                    #for gate in two_to_two_qubit_commuting_pairs:
+                        
 
         return None
