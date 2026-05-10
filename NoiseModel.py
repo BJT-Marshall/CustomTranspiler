@@ -1,10 +1,10 @@
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.quantum_info import Kraus, SuperOp
+from qiskit.quantum_info import state_fidelity
 from qiskit.visualization import plot_histogram
 from qiskit.transpiler import generate_preset_pass_manager
 from qiskit_aer import AerSimulator
-from qiskit_aer.noise import NoiseModel, QuantumError, ReadoutError, depolarizing_error, pauli_error, thermal_relaxation_error
+from qiskit_aer.noise import NoiseModel, depolarizing_error, thermal_relaxation_error
 
 
 #Define a custom noise model assigning error rates to a set of gate types:
@@ -77,3 +77,88 @@ def fidelity_cost_function(circuit):
         fidelity *= (1-gate_error)
 
     return fidelity
+
+
+def noise_model(
+        T1 = 1.5e-4, 
+        T2 = 7.5e-5, 
+        time_single_qubit = 2.5e-8, 
+        time_two_qubit = 2.5e-7,
+        single_qubit_depol_param = 2.5e-4, 
+        two_qubit_depol_param = 2.5e-3
+        ):
+    
+    """
+    Custom Qiskit noise model aiming to simulate superconducting qubit based hardware. Implements thermal relaxation errors and 
+    depoloarizing errors for supported single and two qubit gates.
+
+    Model Constants:
+    :param T1: t1 relaxation time constant, default = 150 \\mu s
+    :type T1: float
+    :param T2: relaxation time constant, default =75 \\mu s
+    :type T2: float
+    :param time_single_qubit: default = 25ns
+    :type time_single_qubit: float
+    :param time_two_qubit: default = 250ns
+    :type time_two_qubit: float
+    :param single_qubit_depol_param: default = 2.5e-4
+    :type single_qubit_depol_param: float
+    :param two_qubit_depol_param: default = 2.5e-3
+    :type two_qubit_depol_param: float
+    :returns model: Custom noise model
+    :rtype: NoiseModel
+    """
+
+    model = NoiseModel() #basis_gates = ['id', 'rz', 'sx', 'cx'] by default
+
+    #Single qubit noise channels
+    single_qubit_thermal = thermal_relaxation_error(t1= T1,t2= T2,time=time_single_qubit)
+    single_qubit_depol = depolarizing_error(param= single_qubit_depol_param ,num_qubits=1) #depolorizing error rate ~0.00025
+    
+    single_qubit_error = single_qubit_depol.compose(single_qubit_thermal)
+
+    for gate in ["x","y","z","rx","ry","rz","sx"]:
+        model.add_all_qubit_quantum_error(error=single_qubit_error, instructions=gate)
+
+    #Two qubit noise channels
+    two_qubit_thermal = thermal_relaxation_error(t1 = T1, t2 = T2, time = time_two_qubit)
+    two_qubit_depol = depolarizing_error(param = two_qubit_depol_param, num_qubits=2) #depolorizing error rate ~0.0025
+
+    two_qubit_error = two_qubit_depol.compose(two_qubit_thermal)
+    for gate in ["cx","cy","cz","crx","cry","crz"]:
+        model.add_all_qubit_quantum_error(error=two_qubit_error, instructions=gate)
+
+    return model
+
+
+def simulate_ideal_vs_noise(circuit, noise_model):
+    """
+    Runs a circuit using an ideal AerSimulator and a noisy AerSimulator using the passed noise model to 
+    calculate the circuit fidelity under said noise model.
+
+    :param circuit: Quantum circuit to be simulated.
+    :type circuit: QuantumCircuit
+    :param noise_model: Custom noise model to be simulated.
+    :type noise_model: NoiseModel
+    :returns fid: Fidelity of the quantum circuit under the custom noise model.
+    :rtype: float
+    """
+
+    noisy_circ = circuit.copy()
+    ideal_simulator = AerSimulator(method = "statevector")
+    noisy_simulator = AerSimulator(method = "density_matrix", noise_model = noise_model)
+
+    circuit.save_statevector()
+    ideal_res = ideal_simulator.run(circuit).result()
+    ideal_state = ideal_res.get_statevector()
+    
+    noisy_circ.save_density_matrix()
+    noisy_res = noisy_simulator.run(noisy_circ).result()
+    noisy_state = noisy_res.data(0)["density_matrix"]
+
+    fid = state_fidelity(ideal_state,noisy_state)
+
+    return fid
+
+
+

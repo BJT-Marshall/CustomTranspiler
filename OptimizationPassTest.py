@@ -1,7 +1,7 @@
 from qiskit import QuantumCircuit, transpile, ClassicalRegister
 from qiskit.transpiler import PassManager
 from CustomPass import CustomOptimizationPass
-from NoiseModel import error_cost_function, fidelity_cost_function
+from NoiseModel import error_cost_function, fidelity_cost_function, noise_model, simulate_ideal_vs_noise
 from NativeGateMapping import NativeGateMap
 from qiskit.circuit.random import random_circuit
 import random
@@ -258,8 +258,77 @@ def plot_depth(num_runs:int, num_qubits:int, depth:int, filename = "Random Circu
 
     return None
 
+def plot_depth_full(num_runs:int, num_qubits:int, depth:int, filename = "Random Circuit Depth Comparison"):
+    """
+    Compares the depth of the original circuit composed of gates in the supported gate list, the mapped circuit decomposed
+    in terms of the native gate set and the fidelity of the optimised circuit in decomposed in terms of the native gate set.
+    """
+    runs = [i for i in range(num_runs)]
+    depth_original = []
+    depth_pre_map_opts = []
+    depth_final = []
+    depth_mapped = []
+    for i in range(num_runs):
+        qc = custom_random_circuit(num_qubits,depth)
+        pre_map_opt = pm.run(qc)
+        mapped_qc = ngMap.map(pre_map_opt)
+        optimized_qc = pm.run(mapped_qc)
+        depth_original.append(qc.depth())
+        depth_pre_map_opts.append(pre_map_opt.depth())
+        depth_mapped.append(mapped_qc.depth())
+        depth_final.append(optimized_qc.depth())
+    plt.clf()
+    plt.plot(runs,depth_original, color = 'r', label = 'Original Circuit')
+    plt.plot(runs,depth_pre_map_opts, color = 'purple', label = 'Optimized Original Circuit')
+    plt.plot(runs,depth_mapped, color = 'g', label = 'Native Gate Mapped Circuit')
+    plt.plot(runs,depth_final, color = 'b', label = 'Final Optimized Circuit')
+    plt.legend()
+    plt.title("Comparison of Circuit Depths Throughout Custom Transpilation Process")
+    plt.xlabel("Random Circuit Number")
+    plt.ylabel("Circuit Depth")
+    plt.savefig(filename)
+    print("Average Original Circuit Depth: ",np.round((np.sum(depth_original)/num_runs),2))
+    print("Average Optimized Original Circuit Depth: ",np.round((np.sum(depth_pre_map_opts)/num_runs),2))
+    print("Average Native Gate Mapped Circuit Depth: ",np.round((np.sum(depth_mapped)/num_runs),2))
+    print("Average Final Optimized Circuit Depth: ",np.round((np.sum(depth_final)/num_runs),2))
+
+    return None
+
+def random_circuit_fidelities(num_runs:int, num_qubits:int, depth:int):
+    
+    model = noise_model()
+    native_gate_fids = []
+    optimized_fids = []
+    for i in range(num_runs):
+        circ = custom_random_circuit(num_qubits,depth)
+        native_circ = ngMap.map(circ)
+        optimized_circ = pm.run(native_circ)
+        native_gate_fids.append(simulate_ideal_vs_noise(native_circ,model))
+        optimized_fids.append(simulate_ideal_vs_noise(optimized_circ,model))
+
+        
+    fids = [native_gate_fids, optimized_fids]
+    
+    return fids
+
+def plot_fids(fids, filename = "Fidelities Throughout Optimization Process"):
+    runs = [i for i in range(len(fids[0]))]
+    plt.plot(runs,fids[0], label = 'Original Native Gate Set Circuit Fidelities', color ='r')
+    plt.plot(runs,fids[1], label = 'Optimized Circuit Fidelities', color ='b')
+    plt.xlabel('Random Circuit Number')
+    plt.ylabel('Circuit Fidelity')
+    plt.legend()
+    plt.savefig(filename)
+    plt.clf()
+
+    return None
+    
 
 #plot_depths_ngMap(100,4,20,"Q4D20R100NG")
 #plot_errors(100,2,10,"Q2D10R100")
 #plot_fidelity(100,4,20,"FidQ4D2R100")
 #plot_depth(100,4,20,"DepQ4D2R100")
+#plot_depth_full(100,10,50,"DepFullQ4D20R100")
+
+#fids = random_circuit_fidelities(100,4,20)
+#plot_fids(fids,"TestFids")
