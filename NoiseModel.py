@@ -1,164 +1,115 @@
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.quantum_info import state_fidelity
-from qiskit.visualization import plot_histogram
-from qiskit.transpiler import generate_preset_pass_manager
-from qiskit_aer import AerSimulator
 from qiskit_aer.noise import NoiseModel, depolarizing_error, thermal_relaxation_error
+from qiskit.circuit.library import RXGate, RYGate, RZGate, CRXGate, CRYGate, CRZGate
+from qiskit.converters import circuit_to_dag
 
+class CustomNoise(NoiseModel):
 
-#Define a custom noise model assigning error rates to a set of gate types:
-
-single_qubit_error_rates = {
-    "x" : 0.001,
-    "y" : 0.001,
-    "z" : 0.001,
-    "rx": 0.005,
-    "ry": 0.005,
-    "rz": 0.005
-}
-
-def squared_noise_model(single_qubit_errors):
-    """
-    For some inputted set of single qubit gate error rates, generates a new dictionary adding the error rates for the controlled
-    versions of all sngle qubit gates where the error rate of a single qubit gate is equal to the square of its controlled counterpart.
-    """
-    error_rates = {}
-    for gate in single_qubit_errors:
-        error_rates[gate] = single_qubit_errors[gate]
-        error_rates["c"+str(gate)] = np.sqrt(single_qubit_errors[gate])
-
-    return error_rates
-
-error_rates = squared_noise_model(single_qubit_error_rates)
-
-def parameter_based_error(gate_name, gate_parameter):
-    """
-    The idea is to model the error for rotation gates as dependant on their rotation parameter. This is to simulate a case where certain
-    rotations can be prepared with less error than others on some imaginary real hardware and therefore a merging from two rotations
-    :math:`\\theta_1` and :math:`\\theta_2` to the single rotation :math:`\\Theta = \\theta_1 + \\theta_2` may not be optimal.
     
-    Choses to scale rotations about the :math:`(X,Y,Z)` axis by :math:`(\\abs{\\sin{(\\theta)}}, \\abs{\\tan{(\\theta)}}}, \\abs{\\cos{\\theta})}` respectively.
-
-    """
-    error = error_rates.get(gate_name, 0.001)
-
-    if gate_name[-2:] == "rx":
-        error = error*np.abs(np.sin(gate_parameter))
-    elif gate_name[-2:] == "ry":
-        error = error*np.abs(np.tan(gate_parameter))
-    elif gate_name[-2:] == "rz":
-        error = error*np.abs(np.cos(gate_parameter))
+    def __init__(self, basis_gates=None):
+        super().__init__(basis_gates)
+        #Setting new attributes for to be accessed during optimization
+        self.single_qubit_depol = 2.5e-4
+        self.two_qubit_depol = 2.5e-3
 
 
-
-    return error
-
-def error_cost_function(circuit):
-
-    error = 0
-    for gate,_,__ in circuit.data:
-        #If gate does not have a defined error rate, default to a value of 0.001
-        gate_error = error_rates.get(gate.name, 0.001)
-        if gate.params != []: #if the gate is dependant on a parameter (rotation gate in this example)
-            gate_error = parameter_based_error(gate.name, gate.params[0])
-        error += gate_error
-
-    return error
-
-def fidelity_cost_function(circuit):
-
-    fidelity = 1
-    for gate,_,__ in circuit.data:
-        #If gate does not have a defined error rate, default to a value of 0.001
-        gate_error = error_rates.get(gate.name, 0.001)
-        if gate.params != []: #if the gate is dependant on a parameter (rotation gate in this example)
-            gate_error = parameter_based_error(gate.name, gate.params[0])
-        fidelity *= (1-gate_error)
-
-    return fidelity
-
-
-def noise_model(
-        T1 = 1.5e-4, 
-        T2 = 7.5e-5, 
-        time_single_qubit = 2.5e-8, 
-        time_two_qubit = 2.5e-7,
-        single_qubit_depol_param = 2.5e-4, 
-        two_qubit_depol_param = 2.5e-3
+    def noise_model(
+        self,
+        circuit : QuantumCircuit,
+        T1 : float = 1.5e-4, 
+        T2 : float = 7.5e-5, 
+        time_single_qubit : float = 2.5e-8, 
+        time_two_qubit : float = 2.5e-7,
+        single_qubit_depol_param : float = 2.5e-4, 
+        two_qubit_depol_param : float = 2.5e-3
         ):
     
-    """
-    Custom Qiskit noise model aiming to simulate superconducting qubit based hardware. Implements thermal relaxation errors and 
-    depoloarizing errors for supported single and two qubit gates.
+        """
+        Custom Qiskit noise model aiming to simulate superconducting qubit based hardware. Implements thermal relaxation errors and 
+        depoloarizing errors for supported single and two qubit gates.
 
-    Model Constants:
-    :param T1: t1 relaxation time constant, default = 150 \\mu s
-    :type T1: float
-    :param T2: relaxation time constant, default =75 \\mu s
-    :type T2: float
-    :param time_single_qubit: default = 25ns
-    :type time_single_qubit: float
-    :param time_two_qubit: default = 250ns
-    :type time_two_qubit: float
-    :param single_qubit_depol_param: default = 2.5e-4
-    :type single_qubit_depol_param: float
-    :param two_qubit_depol_param: default = 2.5e-3
-    :type two_qubit_depol_param: float
-    :returns model: Custom noise model
-    :rtype: NoiseModel
-    """
+        Model Constants:
+        :param T1: Thermal t1 relaxation time constant, default = 150 \\mu s
+        :type T1: float
+        :param T2: Thermal t2 relaxation time constant, default =75 \\mu s
+        :type T2: float
+        :param time_single_qubit: Single qubit gate thermal relaxation time, default = 25ns
+        :type time_single_qubit: float
+        :param time_two_qubit: Two qubit gate thermal relaxation time, default = 250ns
+        :type time_two_qubit: float
+        :param single_qubit_depol_param: Single qubit gate depolarizing constant, default = 2.5e-4
+        :type single_qubit_depol_param: float
+        :param two_qubit_depol_param: Two qubit gate depolarizing constant, default = 2.5e-3
+        :type two_qubit_depol_param: float
+        :returns model: Custom noise model
+        :rtype: NoiseModel
+        """
+        
+        self.single_qubit_depol = single_qubit_depol_param
+        self.two_qubit_depol = two_qubit_depol_param
 
-    model = NoiseModel() #basis_gates = ['id', 'rz', 'sx', 'cx'] by default
+        model = NoiseModel() #basis_gates = ['id', 'rz', 'sx', 'cx'] by default
+        
+        #Single qubit noise channels
+        single_qubit_thermal = thermal_relaxation_error(t1= T1,t2= T2,time=time_single_qubit)
+        single_qubit_depol = depolarizing_error(param= single_qubit_depol_param ,num_qubits=1) #depolorizing error rate ~0.00025
+        
+        single_qubit_error = single_qubit_depol.compose(single_qubit_thermal)
 
-    #Single qubit noise channels
-    single_qubit_thermal = thermal_relaxation_error(t1= T1,t2= T2,time=time_single_qubit)
-    single_qubit_depol = depolarizing_error(param= single_qubit_depol_param ,num_qubits=1) #depolorizing error rate ~0.00025
+        for gate in ["x","y","z","sx"]:
+            model.add_all_qubit_quantum_error(error=single_qubit_error, instructions=gate)
+        
+        #Rotation gate errors:
+        model.add_all_qubit_quantum_error(single_qubit_thermal, instructions = ["rx","ry","rz"])
+        rotation_depol_errors = rotation_based_noise(circuit, single_qubit_depol_param)
+        for gate_label in rotation_depol_errors:
+            model.add_all_qubit_quantum_error(error = rotation_depol_errors[gate_label], instructions = gate_label)
+        
+        #Two qubit noise channels
+        two_qubit_thermal = thermal_relaxation_error(t1 = T1, t2 = T2, time = time_two_qubit)
+        two_qubit_depol = depolarizing_error(param = two_qubit_depol_param, num_qubits=2) #depolorizing error rate ~0.0025
+
+        two_qubit_error = two_qubit_depol.compose(two_qubit_thermal)
+        for gate in ["cx","cy","cz","crx","cry","crz"]:
+            model.add_all_qubit_quantum_error(error=two_qubit_error, instructions=gate)
+
+        self.model = model
+
+        return model
+
+#Helper methods for the CustomNoise class:
+
+def rotation_based_noise(circuit: QuantumCircuit, base_depol_error_rate: float):
     
-    single_qubit_error = single_qubit_depol.compose(single_qubit_thermal)
+    dag = circuit_to_dag(circuit)
 
-    for gate in ["x","y","z","rx","ry","rz","sx"]:
-        model.add_all_qubit_quantum_error(error=single_qubit_error, instructions=gate)
+    rotation_errors = {
 
-    #Two qubit noise channels
-    two_qubit_thermal = thermal_relaxation_error(t1 = T1, t2 = T2, time = time_two_qubit)
-    two_qubit_depol = depolarizing_error(param = two_qubit_depol_param, num_qubits=2) #depolorizing error rate ~0.0025
-
-    two_qubit_error = two_qubit_depol.compose(two_qubit_thermal)
-    for gate in ["cx","cy","cz","crx","cry","crz"]:
-        model.add_all_qubit_quantum_error(error=two_qubit_error, instructions=gate)
-
-    return model
-
-
-def simulate_ideal_vs_noise(circuit, noise_model):
-    """
-    Runs a circuit using an ideal AerSimulator and a noisy AerSimulator using the passed noise model to 
-    calculate the circuit fidelity under said noise model.
-
-    :param circuit: Quantum circuit to be simulated.
-    :type circuit: QuantumCircuit
-    :param noise_model: Custom noise model to be simulated.
-    :type noise_model: NoiseModel
-    :returns fid: Fidelity of the quantum circuit under the custom noise model.
-    :rtype: float
-    """
-
-    noisy_circ = circuit.copy()
-    ideal_simulator = AerSimulator(method = "statevector")
-    noisy_simulator = AerSimulator(method = "density_matrix", noise_model = noise_model)
-
-    circuit.save_statevector()
-    ideal_res = ideal_simulator.run(circuit).result()
-    ideal_state = ideal_res.get_statevector()
+    }
+    rotation_gate_constructors = [RXGate,RYGate,RZGate,CRXGate,CRYGate,CRZGate]
     
-    noisy_circ.save_density_matrix()
-    noisy_res = noisy_simulator.run(noisy_circ).result()
-    noisy_state = noisy_res.data(0)["density_matrix"]
+    for node in list(dag.topological_op_nodes()):
+        #If node is not an operation, ignore
+        if not hasattr(node, "op"):
+            continue
+        for constructor in rotation_gate_constructors:    
+            if isinstance(node.op,constructor):
+                param = node.op.params[0]
+                label = node.op.name
+                node.op.label = label+str(param)
+                rotation_errors[label+str(param)] = depolarizing_error(param= parameter_adjustment(base_depol_error_rate,param) ,num_qubits=1)
 
-    fid = state_fidelity(ideal_state,noisy_state)
+    return rotation_errors
+            
+def parameter_adjustment(base_error:float, param:float):
 
-    return fid
+    #To be a mathematical model that punishes larger rotations to account for the build up of errors from multiple shorter rotation pulses  
+    error = 10*base_error*abs(np.sin(param/4)) #ranges from one order of magnitude larger than the base rate to zero 
+                                               #(~10^-3 on the high end using default values to zero for appplication sof identity.)
+    return error
+
+
 
 
 

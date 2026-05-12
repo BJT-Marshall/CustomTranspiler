@@ -2,8 +2,9 @@ from qiskit.transpiler.basepasses import TransformationPass
 from qiskit.dagcircuit import DAGCircuit
 from qiskit.converters import dag_to_circuit
 from qiskit.circuit.library import XGate, YGate, ZGate, CXGate, CYGate, CZGate, RXGate, RZGate, RYGate, CRXGate, CRYGate, CRZGate
+from qiskit_aer.noise import NoiseModel
 import numpy as np
-from NoiseModel import parameter_based_error
+from NoiseModel import CustomNoise, parameter_adjustment
 
 
 
@@ -13,7 +14,15 @@ class CustomOptimizationPass(TransformationPass):
     A custom optmisization pass checking for the consecutive application of identical gates and consecutive rotation gates to be optimised.
     """
 
-    def run(self, dag: DAGCircuit, native = True) -> DAGCircuit:
+    def __init__(self):
+        super().__init__()
+        self.noise_model = None
+
+    def set_noise_model(self, noise: CustomNoise):
+        self.noise_model = noise
+        return None
+
+    def run(self, dag: DAGCircuit) -> DAGCircuit:
         """
         Runs the custom optimisation on the :python:`DAGCircuit` object.
 
@@ -33,9 +42,12 @@ class CustomOptimizationPass(TransformationPass):
         
         self.swap_commuting_gates(new_dag)
         self.cancel_consec_gates(new_dag)
-        self.merge_rotation_gates(new_dag)
+        if self.noise_model != None:
+            self.merge_rotation_gates(new_dag, self.noise_model)
+        else:
+            self.merge_rotation_gates(new_dag)
 
-        return new_dag
+        return new_dag        
     
     def cancel_consec_gates(self, dag: DAGCircuit):
         """
@@ -63,7 +75,7 @@ class CustomOptimizationPass(TransformationPass):
                         break
         return None
     
-    def merge_rotation_gates(self, dag: DAGCircuit):
+    def merge_rotation_gates(self, dag: DAGCircuit, noise = None):
         """
         Merges consecutive single qubit and controlled rotation gates into a single application therefore reducing the total gate count and build-up of error
         within a circuit.
@@ -94,11 +106,13 @@ class CustomOptimizationPass(TransformationPass):
                         else:
                             new_gate = constructor(theta)
 
-                            old_error = parameter_based_error(node.op.name, node.op.params[0]) + parameter_based_error(operation.op.name, operation.op.params[0])
-                            new_error = parameter_based_error(node.op.name, theta)
-
-
-                            if new_error < old_error:
+                            if noise != None:
+                                old_error = parameter_adjustment(noise.single_qubit_depol, node.op.params[0]) + parameter_adjustment(noise.single_qubit_depol, operation.op.params[0])
+                                new_error = parameter_adjustment(noise.single_qubit_depol, theta)
+                                if new_error < old_error:
+                                    dag.substitute_node(node, new_gate)
+                                    dag.remove_op_node(operation)
+                            else:
                                 dag.substitute_node(node, new_gate)
                                 dag.remove_op_node(operation)
 
@@ -130,8 +144,6 @@ class CustomOptimizationPass(TransformationPass):
         } 
 
         two_to_two_qubit_commuting_pairs = {
-            #key just needs to identify "same" qargs commute or "opposite" qargs commute
-
             #Convention: True means same qargs, False means different qargs
             "cx": [[CRXGate, True], [CZGate, True], [CRZGate, True]],
             "cy": [[CRYGate, True], [CZGate, True], [CRZGate, True]],

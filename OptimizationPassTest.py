@@ -1,7 +1,8 @@
 from qiskit import QuantumCircuit, transpile, ClassicalRegister
 from qiskit.transpiler import PassManager
 from CustomPass import CustomOptimizationPass
-from NoiseModel import error_cost_function, fidelity_cost_function, noise_model, simulate_ideal_vs_noise
+from NoiseModel import CustomNoise
+from Simulations import simulate_ideal_vs_noise
 from NativeGateMapping import NativeGateMap
 from qiskit.circuit.random import random_circuit
 import random
@@ -12,6 +13,27 @@ import matplotlib.pyplot as plt
 pm = PassManager([CustomOptimizationPass()])
 #Custom Native Gate Mapping
 ngMap = NativeGateMap()
+
+def default_workflow(circuit: QuantumCircuit):
+
+    #Define a workflow:
+
+    #1) Define a quantum circuit
+    #2) Decompose this into a native gate set
+    #3) Set up the default noise model using this circuit
+    #4) Optimize this circuit w.r.t the noise model to maximise fidelity
+    
+    custom_pass = CustomOptimizationPass()
+    noise = CustomNoise()
+
+    native_circ = ngMap.map(circuit)
+    model = noise.noise_model(native_circ)
+    custom_pass.set_noise_model(noise)
+    pm = PassManager([custom_pass])
+    
+    optimized_circ = pm.run(native_circ)
+
+    return optimized_circ, native_circ, model
 
 def example_qc():
     """Example QuantumCircuit that demonstrates all optmisation functionalities of the CustomOptimizationPass"""
@@ -296,13 +318,11 @@ def plot_depth_full(num_runs:int, num_qubits:int, depth:int, filename = "Random 
 
 def random_circuit_fidelities(num_runs:int, num_qubits:int, depth:int):
     
-    model = noise_model()
     native_gate_fids = []
     optimized_fids = []
     for i in range(num_runs):
         circ = custom_random_circuit(num_qubits,depth)
-        native_circ = ngMap.map(circ)
-        optimized_circ = pm.run(native_circ)
+        optimized_circ, native_circ, model = default_workflow(circ)
         native_gate_fids.append(simulate_ideal_vs_noise(native_circ,model))
         optimized_fids.append(simulate_ideal_vs_noise(optimized_circ,model))
 
@@ -330,5 +350,10 @@ def plot_fids(fids, filename = "Fidelities Throughout Optimization Process"):
 #plot_depth(100,4,20,"DepQ4D2R100")
 #plot_depth_full(100,10,50,"DepFullQ4D20R100")
 
-#fids = random_circuit_fidelities(100,4,20)
-#plot_fids(fids,"TestFids")
+fids = random_circuit_fidelities(100,4,20)
+plot_fids(fids,"TestFids4")
+
+
+
+
+

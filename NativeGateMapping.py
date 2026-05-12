@@ -1,13 +1,13 @@
-#Basis Transformation into imaginary hardwares Native Gate Set
-#Take the common native gate set {RZ, SX, CX}
-
 from qiskit.circuit.library import SXGate, RZGate, CXGate
 from qiskit.dagcircuit import DAGCircuit
 from qiskit import QuantumCircuit
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 import numpy as np
 
-#for the gates handled by the custom optimization pass in CustomPass.py, this is a lookup table for their decompositions into the 
+#Basis Transformation into imaginary hardwares Native Gate Set
+#Take the common native gate set {RZ, SX, CX}
+
+#For the gates handled by the custom optimization pass in CustomPass.py, this is a lookup table for their decompositions into the 
 #native gate set {"rz","sx","cx"}.
 lookup_table = {
     "x": ["sx","sx"],
