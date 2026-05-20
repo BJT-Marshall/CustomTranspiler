@@ -111,7 +111,23 @@ class CustomOptimisationPass(TransformationPass):
                             dag.remove_op_node(node)
                             dag.remove_op_node(operation)
                         else:
-                            new_gate = constructor(theta)
+                            if noise != None:
+                                if theta < 0:
+                                    theta_eq = theta + 2*np.pi
+                                elif theta > 0:
+                                    theta_eq = theta - 2*np.pi
+                                if parameter_adjustment(noise.single_qubit_depol, theta)>parameter_adjustment(noise.single_qubit_depol, theta_eq):
+                                    theta = theta_eq
+                                
+                                new_gate = constructor(theta)
+                                
+                            else:
+                                #If no noise model is used, prioritise smaller angles with equal mathematical action
+                                if theta < -np.pi:
+                                    theta = theta + 2*np.pi
+                                elif theta > np.pi:
+                                    theta = theta - 2*np.pi
+                                new_gate = constructor(theta)
 
                             if noise != None:
                                 old_error = parameter_adjustment(noise.single_qubit_depol, node.op.params[0]) + parameter_adjustment(noise.single_qubit_depol, operation.op.params[0])
