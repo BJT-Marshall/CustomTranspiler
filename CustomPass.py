@@ -85,7 +85,7 @@ class CustomOptimisationPass(TransformationPass):
     def merge_rotation_gates(self, dag: DAGCircuit, noise = None):
         """
         Merges consecutive single qubit and controlled rotation gates into a single application therefore reducing the total gate count and build-up of error
-        within a circuit.
+        within a circuit. Additionally, chooses the lowest error mathematically equivelant rotation in the region :math:`[0,2\\pi)` when creating merged rotation gates.
 
         :param dag: A :python:`DAGCircuit` object to be optimised.
         :type dag: DAGCircuit
