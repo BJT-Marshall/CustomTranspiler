@@ -9,9 +9,9 @@ from NoiseModel import CustomNoise, parameter_adjustment
 
 
 
-class CustomOptimizationPass(TransformationPass):
+class CustomOptimisationPass(TransformationPass):
     """
-    A custom optmisization pass checking for the consecutive application of identical gates and consecutive rotation gates to be optimised.
+    A custom optmisisation pass implementing modular optimisations to Qiskit :python:`QuantumCircuit` objects.
     """
 
     def __init__(self):
@@ -19,6 +19,13 @@ class CustomOptimizationPass(TransformationPass):
         self.noise_model = None
 
     def set_noise_model(self, noise: CustomNoise):
+        """
+        Sets the noise model to be used in optimisation.
+
+        :param noise: The noise model to be set
+        :type noise: CustomNoise
+        """
+
         self.noise_model = noise
         return None
 
@@ -38,7 +45,7 @@ class CustomOptimizationPass(TransformationPass):
         for node in dag.topological_op_nodes():
             new_dag.apply_operation_back(node.op, node.qargs, node.cargs)
 
-        #Applying the optimization to the copied DAGCircuit object
+        #Applying the optimisation to the copied DAGCircuit object
         
         self.swap_commuting_gates(new_dag)
         self.cancel_consec_gates(new_dag)
@@ -51,7 +58,7 @@ class CustomOptimizationPass(TransformationPass):
     
     def cancel_consec_gates(self, dag: DAGCircuit):
         """
-        Due to unitarity of quantum logic gates, consecutive applications have the action of identity.
+        Removes consecutive applications of hermetian gates within the circuit. Due to unitarity of quantum logic gates, consecutive applications of hermetian gates have the action of identity.
         Removing pairs of consecutive gates therefore reduces the total gate count and build-up of error
         within a circuit.
 
@@ -120,6 +127,12 @@ class CustomOptimizationPass(TransformationPass):
         return None
     
     def swap_commuting_gates(self, dag:DAGCircuit):
+        """
+        Swaps operation order for commuting gates if swaps result in gate cancellations or rotation merges.
+
+        :param dag: A :python:`DAGCircuit` object to be optimised.
+        :type dag: DAGCircuit
+        """
 
         single_qubit_commuting_pairs = {
             #Convention: If TwoQubitGate commutes with "single_qubit_name" only on certain qubit(s) with qargs then its entry is [TwoQubitGate, [qargs]]
@@ -188,82 +201,4 @@ class CustomOptimizationPass(TransformationPass):
                         
                     #for gate in two_to_two_qubit_commuting_pairs:
         
-        return None
-        
-    def swap_commuting_gates_old(self, dag:DAGCircuit):
-
-        single_qubit_commuting_pairs = {
-            #Convention: If TwoQubitGate commutes with "single_qubit_name" only on certain qubit(s) with qargs then its entry is [TwoQubitGate, [qargs]]
-            "x": [RXGate, [CXGate,[1]], [CRXGate,[1]]],
-            "y": [RYGate, [CYGate,[1]], [CRYGate,[1]]],
-            "z": [RZGate, CZGate, CRZGate, [CXGate,[0]], [CRXGate,[0]], [CYGate,[0]], [CRYGate,[0]]],
-            "rx": [XGate, [CXGate,[1]], [CRXGate,[1]]],
-            "ry": [YGate, [CYGate,[1]], [CRYGate,[1]]],
-            "rz": [ZGate, CZGate, CRZGate, [CXGate,[0]], [CRXGate,[0]], [CYGate,[0]], [CRYGate,[0]]],
-            "sx": [XGate, RXGate,[CXGate,[1]],[CZGate,[0]],[CRZGate,[0]],[CRXGate,[0,1]]] 
-            
-        } 
-
-        two_to_one_qubit_commuting_pairs = {
-            #Convention: if "two_qubit_name" commutes with SingleQubitGate only on certain qubit(s) with qargs then its entry is [TwoQubitGate, [qargs]]
-            "cx": [[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]],
-            "cy": [[YGate,[1]],[RYGate,[1]],[ZGate,[0]],[RZGate,[0]]],
-            "cz": [ZGate,RZGate],
-            "crx": [[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]],
-            "cry": [[YGate,[1]],[RYGate,[1]],[ZGate,[0]],[RZGate,[0]]],
-            "crz": [ZGate,RZGate]
-        } 
-
-        two_to_two_qubit_commuting_pairs = {
-            #key just needs to identify "same" qargs commute or "opposite" qargs commute
-
-            #Convention: True means same qargs, False means different qargs
-            "cx": [[CRXGate, True], [CZGate, True], [CRZGate, True]],
-            "cy": [[CRYGate, True], [CZGate, True], [CRZGate, True]],
-            "cz": [[CRZGate, True], [CRZGate, True]]
-
-        } #TODO finish this list of commutators
-
-        node_list = list(dag.topological_op_nodes())
-        for i in range(len(node_list)-1):
-            node = node_list[i]
-            next_node = node_list[i+1]
-
-            succesive_op = dag.quantum_successors(next_node)
-
-            for operation in succesive_op:
-                #If node is not an operation, ignore
-                if not hasattr(operation, "op"):
-                    continue
-                if node.qargs != operation.qargs:
-                    continue
-            
-                if type(node.op) == type(operation.op) and len(node.qargs) == 1: #if they would cancel or merge.
-                    for gate in single_qubit_commuting_pairs[node.op.name]:
-                        if isinstance(gate,list): #if the gate is a two qubit gate that requires more careful treatment
-                            if isinstance(next_node.op, gate[0]): #if they also can be brought together through commutation
-                                for arg in gate[1]:
-                                    if node.qargs[0] == next_node.qargs[arg]: #if the qargs are correct to allow commutation
-                                        dag.swap_nodes(node,next_node)
-                                        
-                        else:
-                            if isinstance(next_node.op, gate): #if the single qubit gates commute and can be swapped
-                                dag.swap_nodes(node,next_node)
-
-                
-                elif type(node.op) == type(operation.op):
-                    for gate in two_to_one_qubit_commuting_pairs[node.op.name]: #[[XGate,[1]],[RXGate,[1]],[ZGate,[0]],[RZGate,[0]]]
-                        if isinstance(gate,list): #if the gate is a two qubit gate that requires more careful treatment
-                            if isinstance(next_node.op, gate[0]): #if they also can be brought together through commutation
-                                for arg in gate[1]:
-                                    if node.qargs[arg] == next_node.qargs[0]: #if the qargs are correct to allow commutation
-                                        dag.swap_nodes(node,next_node)
-                        else:
-                            if isinstance(next_node.op, gate): #if the single qubit gates commute and can be swapped
-                                dag.swap_nodes(node,next_node)
-                        
-                        
-                    #for gate in two_to_two_qubit_commuting_pairs:
-                        
-
         return None

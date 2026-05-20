@@ -4,10 +4,10 @@ from qiskit import QuantumCircuit
 from qiskit.converters import circuit_to_dag, dag_to_circuit
 import numpy as np
 
-#Basis Transformation into imaginary hardwares Native Gate Set
+#Basis Transformation into a common Native Gate Set
 #Take the common native gate set {RZ, SX, CX}
 
-#For the gates handled by the custom optimization pass in CustomPass.py, this is a lookup table for their decompositions into the 
+#For the gates handled by the custom optimisation pass in CustomPass.py, this is a lookup table for their decompositions into the 
 #native gate set {"rz","sx","cx"}.
 lookup_table = {
     "x": ["sx","sx"],
@@ -25,6 +25,14 @@ lookup_table = {
 }
 
 def circuit_generator(gate_name:str, gate_params:list):
+    """
+    Generates native gate set decomposition for an inputted gate using the gate set :python:`('rz','sx','cx')`.
+
+    :param gate_name: The name string for the gate to be decomposed
+    :type gate_name: str
+    :param gate_params: The list of parameters for the gate to be decomposed
+    :type gate_params: str
+    """
     
     op_list = lookup_table[gate_name]
     if len(gate_name) == 1:
@@ -80,7 +88,7 @@ class NativeGateMap():
 
         :param dag: Initial DAG circuit in terms of supported gates.
         :type dag: DAGCircuit
-        :returns dag: Decomposed DAG circuit in terms of the imaginary native gate set.
+        :returns dag: Decomposed DAG circuit in terms of the native gate set.
         :rtype: DAGCircuit
         """
 
