@@ -21,7 +21,8 @@ lookup_table = {
     "cz": [["rz",np.pi],"sx",["rz",np.pi/2],"cx",["rz",np.pi],"sx",["rz",np.pi/2]],
     "crx": [["rz",np.pi],"sx",["rz",np.pi/2],["rz","0.5"],"cx",["rz","-0.5"],"cx",["rz",np.pi],"sx",["rz",np.pi/2]],
     "cry": [["rz",-np.pi/2],["rz",np.pi],"sx",["rz",np.pi/2],["rz","0.5"],"cx",["rz","-0.5"],"cx",["rz",np.pi],"sx",["rz",np.pi/2],["rz",np.pi/2]],
-    "crz": [["rz","0.5"],"cx",["rz","-0.5"],"cx"]
+    "crz": [["rz","0.5"],"cx",["rz","-0.5"],"cx"],
+    "sx": ["sx"] #native
 }
 
 def circuit_generator(gate_name:str, gate_params:list):
@@ -35,13 +36,12 @@ def circuit_generator(gate_name:str, gate_params:list):
     """
     
     op_list = lookup_table[gate_name]
-    if len(gate_name) == 1:
-        qc = QuantumCircuit(1)
-        qubits = [0]
-    else:
+    if gate_name[0] == "c":
         qc = QuantumCircuit(2) #define qubit 1 to be the control and qubit 0 to be the target
         qubits = [0,1]
-    
+    else:
+        qc = QuantumCircuit(1)
+        qubits = [0]
 
     for op in op_list:
         if op == "sx":

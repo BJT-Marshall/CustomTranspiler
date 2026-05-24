@@ -63,10 +63,10 @@ class CustomNoise(NoiseModel):
             model.add_all_qubit_quantum_error(error=single_qubit_error, instructions=gate)
         
         #Rotation gate errors:
-        model.add_all_qubit_quantum_error(single_qubit_thermal, instructions = ["rx","ry","rz"])
-        rotation_depol_errors_1q = rotation_based_noise(circuit, single_qubit_depol_param)
+        rotation_depol_errors_1q = rotation_based_noise_1q(circuit, single_qubit_depol_param)
         for gate_label in rotation_depol_errors_1q:
-            model.add_all_qubit_quantum_error(error = rotation_depol_errors_1q[gate_label], instructions = gate_label)
+            rotation_error = rotation_depol_errors_1q[gate_label].compose(single_qubit_thermal)
+            model.add_all_qubit_quantum_error(error = rotation_error, instructions = gate_label)
         
         #Two qubit noise channels
         two_qubit_thermal = thermal_relaxation_error(t1 = T1, t2 = T2, time = time_two_qubit)
@@ -75,13 +75,11 @@ class CustomNoise(NoiseModel):
         for gate in ["cx","cy","cz"]:
             model.add_all_qubit_quantum_error(error=two_qubit_error, instructions=gate)
 
-        #Two qubit rotation gate errors:
-        for gate in ["crx","cry","crz"]:
-            model.add_all_qubit_quantum_error(error=two_qubit_thermal, instructions=gate)    
-        
-        rotation_depol_errors_2q = rotation_based_noise(circuit, two_qubit_depol_param)
+        #Two qubit rotation gate errors: 
+        rotation_depol_errors_2q = rotation_based_noise_2q(circuit, two_qubit_depol_param)
         for gate_label in rotation_depol_errors_2q:
-            model.add_all_qubit_quantum_error(error = rotation_depol_errors_2q[gate_label], instructions = gate_label)
+            rotation_error_2q = rotation_depol_errors_2q[gate_label].compose(two_qubit_thermal)
+            model.add_all_qubit_quantum_error(error = rotation_error_2q, instructions = gate_label)
 
         self.model = model
 
@@ -89,7 +87,7 @@ class CustomNoise(NoiseModel):
 
 #Helper methods for the CustomNoise class:
 
-def rotation_based_noise(circuit: QuantumCircuit, base_depol_error_rate: float):
+def rotation_based_noise_1q(circuit: QuantumCircuit, base_depol_error_rate: float):
     """
     Generates depolarizing errors for each rotation gate dependant on its rotation parameter, to be appended into the custom noise model.
 
@@ -105,7 +103,7 @@ def rotation_based_noise(circuit: QuantumCircuit, base_depol_error_rate: float):
     rotation_errors = {
 
     }
-    rotation_gate_constructors = [RXGate,RYGate,RZGate,CRXGate,CRYGate,CRZGate]
+    rotation_gate_constructors = [RXGate,RYGate,RZGate]
     
     for node in list(dag.topological_op_nodes()):
         #If node is not an operation, ignore
@@ -117,6 +115,37 @@ def rotation_based_noise(circuit: QuantumCircuit, base_depol_error_rate: float):
                 label = node.op.name
                 node.op.label = label+str(param)
                 rotation_errors[label+str(param)] = depolarizing_error(param= parameter_adjustment(base_depol_error_rate,param) ,num_qubits=1)
+
+    return rotation_errors
+
+def rotation_based_noise_2q(circuit: QuantumCircuit, base_depol_error_rate: float):
+    """
+    Generates depolarizing errors for each controlled rotation gate dependant on its rotation parameter, to be appended into the custom noise model.
+
+    :param circuit: The quantum circuit being considered, from which the controlled rotation gates will be taken
+    :type circuit: QuantumCircuit
+    :param base_depol_error_rate: The default depolarization error rate for the rotation gate type
+    :returns rotation_errors: A dictionary containing the rotation gate error channels indexed by their parameter label
+    :rtype: dict
+    """
+    
+    dag = circuit_to_dag(circuit)
+
+    rotation_errors = {
+
+    }
+    rotation_gate_constructors = [CRXGate,CRYGate,CRZGate]
+    
+    for node in list(dag.topological_op_nodes()):
+        #If node is not an operation, ignore
+        if not hasattr(node, "op"):
+            continue
+        for constructor in rotation_gate_constructors:    
+            if isinstance(node.op,constructor):
+                param = node.op.params[0]
+                label = node.op.name
+                node.op.label = label+str(param)
+                rotation_errors[label+str(param)] = depolarizing_error(param= parameter_adjustment(base_depol_error_rate,param) ,num_qubits=2)
 
     return rotation_errors
             
