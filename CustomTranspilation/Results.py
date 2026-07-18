@@ -14,12 +14,12 @@ ngMap = NativeGateMap()
 
 # Load the test batch of circuits each containing 10 qubits with a minimum depth of 50: 
 
-with open("Test_Batch_Q10D50.qpy", "rb") as file:
+with open("Test Data and Plots/Test_Batch_Q10D50.qpy", "rb") as file:
     loaded_circuits = qpy.load(file)
     file.close()
 
 # Load the example circuit containing 4 qubits with a depth of 20:
-with open("Example_Circuit.qpy", "rb") as file:
+with open("Test Data and Plots/Example_Circuit.qpy", "rb") as file:
     loaded_circuit = qpy.load(file)
     example_circuit = loaded_circuit[0]
     file.close()
@@ -220,11 +220,11 @@ if run:
         data['depth'].append(circuit_decomp.depth())
         data['optimised_depth'].append(optimised_circ.depth())
 
-    with open("Test_Batch_Optimised_Q10D50.qpy", "wb") as file:
+    with open("Test Data and Plots/Test_Batch_Optimised_Q10D50.qpy", "wb") as file:
         qpy.dump(data['optimised_circuits'],file)
         file.close()
 
-    with open("Test_Batch_Data_Q10D50", "w") as file:
+    with open("Test Data and Plots/Test_Batch_Data_Q10D50", "w") as file:
         for i in range(len(data['fidelity'])):
             file.write(str(data['fidelity'][i])+","+str(data['optimised_fidelity'][i])+","+str(data['depth'][i])+","+str(data['optimised_depth'][i])+"\n")
         file.close()
